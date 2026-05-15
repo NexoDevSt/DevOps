@@ -1,0 +1,19 @@
+# Java
+**/target/
+*.jar
+*.war
+
+# Node / Frontend
+**/node_modules/
+**/dist/
+**/build/
+
+# IDEs y Sistema
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Docker logs
+*.log
