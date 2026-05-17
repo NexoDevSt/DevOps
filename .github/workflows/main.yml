@@ -28,10 +28,11 @@ jobs:
           host: ${{ secrets.IP_FRONTEND }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.AWS_SSH_KEY }}
+          # Forzar compatibilidad con algoritmos de Amazon Linux
+          use_insecure_cipher: true 
           script: |
             echo "--- Desplegando Frontend ---"
             cd /var/www/html || mkdir -p ~/frontend && cd ~/frontend
-            # Si el repo no existe, se clona; si existe, se actualiza
             if [ ! -d .git ]; then
               git clone -b deploy https://github.com/${{ github.repository }}.git .
             else
@@ -45,10 +46,14 @@ jobs:
           host: ${{ secrets.IP_BACKEND }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.AWS_SSH_KEY }}
+          # Forzar compatibilidad con algoritmos de Amazon Linux
+          use_insecure_cipher: true
           # Configuración del salto (Bastion)
           proxy_host: ${{ secrets.IP_FRONTEND }}
           proxy_username: ${{ secrets.EC2_USER }}
           proxy_key: ${{ secrets.AWS_SSH_KEY }}
+          # Forzar compatibilidad también para el proxy
+          proxy_use_insecure_cipher: true
           script: |
             echo "--- Desplegando Backend ---"
             cd ~/backend || mkdir -p ~/backend && cd ~/backend
@@ -57,5 +62,3 @@ jobs:
             else
               git pull origin deploy
             fi
-            # Ejemplo: reiniciar servicio (ajusta según tu caso)
-            # npm install && pm2 restart all
