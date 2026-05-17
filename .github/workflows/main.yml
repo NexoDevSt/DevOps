@@ -1,0 +1,61 @@
+name: Deploy to AWS EC2 (Front & Back)
+
+on:
+  push:
+    branches:
+      - deploy
+
+jobs:
+  deploy-infrastructure:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # Configuración de credenciales de AWS Academy
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      # Despliegue en la Instancia Frontend (Pública)
+      - name: Deploy Frontend
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.IP_FRONTEND }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.AWS_SSH_KEY }}
+          script: |
+            echo "--- Desplegando Frontend ---"
+            cd /var/www/html || mkdir -p ~/frontend && cd ~/frontend
+            # Si el repo no existe, se clona; si existe, se actualiza
+            if [ ! -d .git ]; then
+              git clone -b deploy https://github.com/${{ github.repository }}.git .
+            else
+              git pull origin deploy
+            fi
+
+      # Despliegue en la Instancia Backend (Privada) vía Proxy
+      - name: Deploy Backend via Frontend Proxy
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.IP_BACKEND }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.AWS_SSH_KEY }}
+          # Configuración del salto (Bastion)
+          proxy_host: ${{ secrets.IP_FRONTEND }}
+          proxy_username: ${{ secrets.EC2_USER }}
+          proxy_key: ${{ secrets.AWS_SSH_KEY }}
+          script: |
+            echo "--- Desplegando Backend ---"
+            cd ~/backend || mkdir -p ~/backend && cd ~/backend
+            if [ ! -d .git ]; then
+              git clone -b deploy https://github.com/${{ github.repository }}.git .
+            else
+              git pull origin deploy
+            fi
+            # Ejemplo: reiniciar servicio (ajusta según tu caso)
+            # npm install && pm2 restart all
