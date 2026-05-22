@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - deploy
+      - fix/backend_problems
 
 jobs:
   deploy-frontend:
@@ -32,9 +33,9 @@ jobs:
             mkdir -p ~/front_despacho
             cd ~/front_despacho
             if [ ! -d .git ]; then
-              git clone -b deploy https://${{ secrets.GH_TOKEN }}@github.com/${{ github.repository }}.git .
+              git clone -b ${{ github.ref_name }} https://${{ secrets.GH_TOKEN }}@github.com/${{ github.repository }}.git .
             else
-              git pull origin deploy
+              git pull origin ${{ github.ref_name }}
             fi
             echo "Frontend desplegado OK"
 
@@ -67,22 +68,58 @@ jobs:
           script: |
             echo "--- Desplegando Backend ---"
 
-            # Microservicio Despachos
+            # 1. Levantar el Servidor MySQL en Docker
+            echo "Iniciando Servidor MySQL..."
+            sudo docker start mysql-server || sudo docker run --name mysql-server -e MYSQL_ROOT_PASSWORD=${{ secrets.DB_PASSWORD }} -p 3306:3306 -d mysql:8.0
+            
+            # Esperar a que el contenedor inicie para evitar error de conexión al crear las DBs
+            sleep 15
+            
+            # 2. Crear las bases de datos independientes
+            echo "Asegurando que las bases de datos existan..."
+            sudo docker exec mysql-server mysql -uroot -p${{ secrets.DB_PASSWORD }} -e "CREATE DATABASE IF NOT EXISTS despachos_db; CREATE DATABASE IF NOT EXISTS ventas_db;"
+
+            # 3. Microservicio Despachos
+            echo "--- Configurando Microservicio Despachos ---"
             mkdir -p ~/back-Despachos_SpringBoot
             cd ~/back-Despachos_SpringBoot
             if [ ! -d .git ]; then
-              git clone -b deploy https://${{ secrets.GH_TOKEN }}@github.com/${{ github.repository }}.git .
+              git clone -b ${{ github.ref_name }} https://${{ secrets.GH_TOKEN }}@github.com/${{ github.repository }}.git .
             else
-              git pull origin deploy
+              git pull origin ${{ github.ref_name }}
             fi
+            
+            cd Springboot-API-REST-DESPACHO
+            chmod +x mvnw
+            ./mvnw clean package -DskipTests
+            
+            echo "Deteniendo versión anterior de Despachos..."
+            kill -9 $(lsof -t -i:8080) || true
+            
+            echo "Iniciando Microservicio Despachos..."
+            nohup DB_ENDPOINT=localhost DB_PORT=3306 DB_NAME=despachos_db DB_USER=root DB_PASSWORD=${{ secrets.DB_PASSWORD }} java -jar target/Springboot-API-REST-DESPACHO-0.0.1-SNAPSHOT.jar > despachos_output.log 2>&1 &
             echo "Back Despachos OK"
 
-            # Microservicio Ventas
+            # 4. Microservicio Ventas
+            echo "--- Configurando Microservicio Ventas ---"
+            cd ~
             mkdir -p ~/back-Ventas_SpringBoot
             cd ~/back-Ventas_SpringBoot
             if [ ! -d .git ]; then
-              git clone -b deploy https://${{ secrets.GH_TOKEN }}@github.com/${{ github.repository }}.git .
+              git clone -b ${{ github.ref_name }} https://${{ secrets.GH_TOKEN }}@github.com/${{ github.repository }}.git .
             else
-              git pull origin deploy
+              git pull origin ${{ github.ref_name }}
             fi
+            
+            # IMPORTANTE: Si Ventas está dentro de una subcarpeta (igual que despachos), entra en ella.
+            # cd Springboot-API-REST-VENTAS 
+            
+            chmod +x mvnw
+            ./mvnw clean package -DskipTests
+            
+            echo "Deteniendo versión anterior de Ventas..."
+            kill -9 $(lsof -t -i:8081) || true
+            
+            echo "Iniciando Microservicio Ventas..."
+            nohup DB_ENDPOINT=localhost DB_PORT=3306 DB_NAME=ventas_db DB_USER=root DB_PASSWORD=${{ secrets.DB_PASSWORD }} java -jar target/REEMPLAZAR_CON_TU_JAR_DE_VENTAS-0.0.1-SNAPSHOT.jar > ventas_output.log 2>&1 &
             echo "Back Ventas OK"
