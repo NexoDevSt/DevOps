@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  frontend:
+    image: ${DOCKERHUB_USERNAME}/frontend-innovatech:latest
+    container_name: frontend-app
+    ports:
+      - "80:80"
+    networks:
+      - innova-network
+    restart: always
+
+networks:
+  innova-network:
+    driver: bridge
