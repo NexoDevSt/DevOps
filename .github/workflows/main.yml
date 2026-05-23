@@ -25,7 +25,6 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      # COMPILAR Y CONSTRUIR DESPACHOS
       - name: Compilar Microservicio Despachos
         run: |
           cd back-Despachos_SpringBoot/Springboot-API-REST-DESPACHO
@@ -39,7 +38,6 @@ jobs:
           push: true
           tags: ${{ secrets.DOCKERHUB_USERNAME }}/back-despachos:latest
 
-      # COMPILAR Y CONSTRUIR VENTAS
       - name: Compilar Microservicio Ventas
         run: |
           cd back-Ventas_SpringBoot/Springboot-API-REST
@@ -53,7 +51,6 @@ jobs:
           push: true
           tags: ${{ secrets.DOCKERHUB_USERNAME }}/back-ventas:latest
 
-      # CONSTRUIR Y SUBIR FRONTEND
       - name: Construir y Subir Imagen Frontend
         uses: docker/build-push-action@v4
         with:
@@ -61,8 +58,7 @@ jobs:
           push: true
           tags: ${{ secrets.DOCKERHUB_USERNAME }}/frontend-innovatech:latest
 
-
-deploy-backend:
+  deploy-backend:
     needs: build-and-push
     runs-on: ubuntu-latest
     steps:
@@ -104,7 +100,7 @@ deploy-backend:
             sudo docker exec mysql-server mysql -uroot -p${DB_PASSWORD} -e "CREATE DATABASE IF NOT EXISTS despachos_db; CREATE DATABASE IF NOT EXISTS ventas_db;"
           EOF
 
-    deploy-frontend:
+  deploy-frontend:
     needs: build-and-push
     runs-on: ubuntu-latest
     steps:
@@ -133,7 +129,6 @@ deploy-backend:
           ssh frontend << 'EOF'
             export DOCKERHUB_USERNAME="${{ secrets.DOCKERHUB_USERNAME }}"
             
-            # Detener contenedor anterior, descargar imagen fresca y levantar
             sudo docker compose down || true
             sudo docker compose pull
             sudo docker compose up -d
