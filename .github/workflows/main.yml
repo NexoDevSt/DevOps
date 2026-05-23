@@ -72,6 +72,8 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
           cat >> ~/.ssh/config <<EOF
           Host *
+            StrictHostKeyChecking no
+            UserKnownHostsFile /dev/null
             ServerAliveInterval 30
             ServerAliveCountMax 5
 
@@ -79,19 +81,18 @@ jobs:
             HostName ${{ secrets.IP_FRONTEND }}
             User ${{ secrets.VM_USER }}
             IdentityFile ~/.ssh/id_rsa
-            StrictHostKeyChecking no
 
           Host backend
             HostName ${{ secrets.IP_BACKEND }}
             User ${{ secrets.VM_USER }}
             IdentityFile ~/.ssh/id_rsa
             ProxyJump frontend
-            StrictHostKeyChecking no
           EOF
 
       - name: Copiar Docker Compose al Backend
         run: |
-          scp docker-compose.backend.yml backend:~/docker-compose.yml
+          # Agregamos -o StrictHostKeyChecking=no y -o UserKnownHostsFile=/dev/null explícitamente a scp por seguridad
+          scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null docker-compose.backend.yml backend:~/docker-compose.yml
 
       - name: Desplegar Backend en AWS con Docker Compose
         run: |
