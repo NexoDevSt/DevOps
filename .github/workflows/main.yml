@@ -103,9 +103,10 @@ jobs:
             sudo systemctl stop mariadb || true
             sudo systemctl disable mariadb || true
             
-            sudo docker compose down || true
-            sudo docker compose pull
-            sudo docker compose up -d
+            # El flag -E permite que sudo lea las variables exportadas arriba
+            sudo -E docker compose down || true
+            sudo -E docker compose pull
+            sudo -E docker compose up -d
             
             echo "Esperando a que MySQL inicie..."
             sleep 15
@@ -146,7 +147,8 @@ jobs:
             sudo curl -sSL https://github.com/docker/compose/releases/latest/download/docker-compose-linux-$(uname -m) -o /usr/libexec/docker/cli-plugins/docker-compose
             sudo chmod +x /usr/libexec/docker/cli-plugins/docker-compose
             
-            sudo docker compose down || true
-            sudo docker compose pull
-            sudo docker compose up -d
+            # El flag -E permite que sudo lea las variables exportadas arriba
+            sudo -E docker compose down || true
+            sudo -E docker compose pull
+            sudo -E docker compose up -d
           EOF
