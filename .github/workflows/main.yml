@@ -68,7 +68,7 @@ jobs:
       - name: Configurar llave SSH Directa al Backend
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          echo "${{ secrets.AWS_SSH_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
           cat >> ~/.ssh/config <<EOF
           Host backend
@@ -110,7 +110,7 @@ jobs:
       - name: Configurar llave SSH Directa al Frontend
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          echo "${{ secrets.AWS_SSH_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
           cat >> ~/.ssh/config <<EOF
           Host frontend
