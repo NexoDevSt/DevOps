@@ -103,6 +103,9 @@ jobs:
             sudo systemctl stop mariadb || true
             sudo systemctl disable mariadb || true
             
+            # Forzar la eliminación de contenedores atascados de intentos anteriores
+            sudo docker rm -f mysql-server || true
+            
             # El flag -E permite que sudo lea las variables exportadas arriba
             sudo -E docker compose down || true
             sudo -E docker compose pull
