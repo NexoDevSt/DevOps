@@ -65,16 +65,23 @@ jobs:
       - name: Checkout para obtener los archivos Compose
         uses: actions/checkout@v3
 
-      - name: Configurar llave SSH Directa al Backend
+      - name: Configurar llave SSH haciendo salto por el Frontend
         run: |
           mkdir -p ~/.ssh
           echo "${{ secrets.AWS_SSH_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
           cat >> ~/.ssh/config <<EOF
+          Host frontend
+            HostName ${{ secrets.IP_FRONTEND }}
+            User ${{ secrets.VM_USER }}
+            IdentityFile ~/.ssh/id_rsa
+            StrictHostKeyChecking no
+
           Host backend
             HostName ${{ secrets.IP_BACKEND }}
             User ${{ secrets.VM_USER }}
             IdentityFile ~/.ssh/id_rsa
+            ProxyJump frontend
             StrictHostKeyChecking no
           EOF
 
@@ -87,6 +94,11 @@ jobs:
           ssh backend << 'EOF'
             export DOCKERHUB_USERNAME="${{ secrets.DOCKERHUB_USERNAME }}"
             export DB_PASSWORD="${{ secrets.DB_PASSWORD }}"
+            
+            # Instalar Docker Compose si no existe en Amazon Linux 2023
+            sudo mkdir -p /usr/libexec/docker/cli-plugins
+            sudo curl -sSL https://github.com/docker/compose/releases/latest/download/docker-compose-linux-$(uname -m) -o /usr/libexec/docker/cli-plugins/docker-compose
+            sudo chmod +x /usr/libexec/docker/cli-plugins/docker-compose
             
             sudo systemctl stop mariadb || true
             sudo systemctl disable mariadb || true
@@ -128,6 +140,11 @@ jobs:
         run: |
           ssh frontend << 'EOF'
             export DOCKERHUB_USERNAME="${{ secrets.DOCKERHUB_USERNAME }}"
+            
+            # Instalar Docker Compose si no existe en Amazon Linux 2023
+            sudo mkdir -p /usr/libexec/docker/cli-plugins
+            sudo curl -sSL https://github.com/docker/compose/releases/latest/download/docker-compose-linux-$(uname -m) -o /usr/libexec/docker/cli-plugins/docker-compose
+            sudo chmod +x /usr/libexec/docker/cli-plugins/docker-compose
             
             sudo docker compose down || true
             sudo docker compose pull
