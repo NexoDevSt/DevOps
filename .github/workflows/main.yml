@@ -61,30 +61,24 @@ jobs:
           push: true
           tags: ${{ secrets.DOCKERHUB_USERNAME }}/frontend-innovatech:latest
 
-  deploy-backend:
+
+deploy-backend:
     needs: build-and-push
     runs-on: ubuntu-latest
     steps:
       - name: Checkout para obtener los archivos Compose
         uses: actions/checkout@v3
 
-      - name: Configurar llave SSH mediante Bastion
+      - name: Configurar llave SSH Directa al Backend
         run: |
           mkdir -p ~/.ssh
           echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
           cat >> ~/.ssh/config <<EOF
-          Host bastion
-            HostName ${{ secrets.IP_BASTION }}
-            User ${{ secrets.VM_USER }}
-            IdentityFile ~/.ssh/id_rsa
-            StrictHostKeyChecking no
-
           Host backend
             HostName ${{ secrets.IP_BACKEND }}
             User ${{ secrets.VM_USER }}
             IdentityFile ~/.ssh/id_rsa
-            ProxyJump bastion
             StrictHostKeyChecking no
           EOF
 
@@ -95,26 +89,22 @@ jobs:
       - name: Desplegar Backend en AWS con Docker Compose
         run: |
           ssh backend << 'EOF'
-            # Exportar variables para que Docker Compose las lea
             export DOCKERHUB_USERNAME="${{ secrets.DOCKERHUB_USERNAME }}"
             export DB_PASSWORD="${{ secrets.DB_PASSWORD }}"
             
-            # Limpiar puerto de MariaDB por si la máquina se reinició (prevención)
             sudo systemctl stop mariadb || true
             sudo systemctl disable mariadb || true
             
-            # Detener lo anterior, descargar lo nuevo y encender
             sudo docker compose down || true
             sudo docker compose pull
             sudo docker compose up -d
             
-            # Crear automáticamente las bases de datos si no existen
             echo "Esperando a que MySQL inicie..."
             sleep 15
             sudo docker exec mysql-server mysql -uroot -p${DB_PASSWORD} -e "CREATE DATABASE IF NOT EXISTS despachos_db; CREATE DATABASE IF NOT EXISTS ventas_db;"
           EOF
 
-  deploy-frontend:
+    deploy-frontend:
     needs: build-and-push
     runs-on: ubuntu-latest
     steps:
