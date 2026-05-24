@@ -62,10 +62,10 @@ jobs:
     needs: build-and-push
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout para obtener los archivos Compose
+      - name: Checkout
         uses: actions/checkout@v3
 
-      - name: Configurar llave SSH haciendo salto por el Frontend
+      - name: Configurar SSH con ProxyJump
         run: |
           mkdir -p ~/.ssh
           echo "${{ secrets.AWS_SSH_KEY }}" > ~/.ssh/id_rsa
@@ -83,47 +83,44 @@ jobs:
             IdentityFile ~/.ssh/id_rsa
             ProxyJump frontend
             StrictHostKeyChecking no
+            ConnectTimeout 60
           EOF
 
-      - name: Copiar Docker Compose al Backend mediante SSH puro
-        run: |
-          # Reemplazamos scp por una inyección directa vía ssh
-          cat docker-compose.backend.yml | ssh backend "cat > ~/docker-compose.yml"
-
-      - name: Desplegar Backend en AWS con Docker Compose
+      - name: Preparar y Desplegar Backend
         run: |
           ssh backend << 'EOF'
-            export DOCKERHUB_USERNAME="${{ secrets.DOCKERHUB_USERNAME }}"
-            export DB_PASSWORD="${{ secrets.DB_PASSWORD }}"
-            
-            # --- CREAR MEMORIA SWAP DE 2GB PARA EVITAR CAIDAS POR FALTA DE RAM ---
             if [ ! -f /swapfile ]; then
-              echo "Creando archivo Swap de 2GB..."
               sudo fallocate -l 2G /swapfile || sudo dd if=/dev/zero of=/swapfile bs=1M count=2048
               sudo chmod 600 /swapfile
               sudo mkswap /swapfile
               sudo swapon /swapfile
-              echo "Swap creado y activado exitosamente."
             fi
-            
-            # Instalar Docker Compose si no existe en Amazon Linux 2023
             sudo mkdir -p /usr/libexec/docker/cli-plugins
             sudo curl -sSL https://github.com/docker/compose/releases/latest/download/docker-compose-linux-$(uname -m) -o /usr/libexec/docker/cli-plugins/docker-compose
             sudo chmod +x /usr/libexec/docker/cli-plugins/docker-compose
+          EOF
+
+          cat docker-compose.backend.yml | ssh backend "cat > ~/docker-compose.yml"
+
+          ssh backend << 'EOF'
+            export DOCKERHUB_USERNAME="${{ secrets.DOCKERHUB_USERNAME }}"
+            export DB_PASSWORD="${{ secrets.DB_PASSWORD }}"
             
-            sudo systemctl stop mariadb || true
-            sudo systemctl disable mariadb || true
-            
-            # Forzar la eliminación de contenedores atascados de intentos anteriores
+            sudo -E docker compose down || true
             sudo docker rm -f mysql-server || true
             
-            # El flag -E permite que sudo lea las variables exportadas arriba
-            sudo -E docker compose down || true
+            echo "Descargando imágenes..."
             sudo -E docker compose pull
+            
+            echo "Iniciando Base de Datos..."
+            sudo -E docker compose up -d mysql-server
+            sleep 30
+            
+            echo "Iniciando aplicaciones Spring Boot..."
             sudo -E docker compose up -d
             
-            echo "Esperando a que MySQL inicie..."
-            sleep 25
+            echo "Configurando bases de datos..."
+            sleep 20
             sudo docker exec mysql-server mysql -uroot -p${DB_PASSWORD} -e "CREATE DATABASE IF NOT EXISTS despachos_db; CREATE DATABASE IF NOT EXISTS ventas_db;"
           EOF
           
