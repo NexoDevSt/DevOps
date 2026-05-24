@@ -65,66 +65,52 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
 
-      - name: Configurar SSH con ProxyJump (Red Interna)
+      - name: Configurar SSH y Desplegar
         run: |
           mkdir -p ~/.ssh
           echo "${{ secrets.AWS_SSH_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
+          
+          # Esta configuración es la "llave maestra" para evitar el timeout del banner
           cat >> ~/.ssh/config <<EOF
           Host frontend
             HostName ${{ secrets.IP_FRONTEND }}
-            User ${{ secrets.VM_USER }}
+            User ec2-user
             IdentityFile ~/.ssh/id_rsa
             StrictHostKeyChecking no
+            ControlMaster auto
+            ControlPath ~/.ssh/ssh-%r@%h:%p
+            ControlPersist 10m
 
           Host backend
-            HostName ${{ secrets.IP_BACKEND }}
-            User ${{ secrets.VM_USER }}
+            HostName 172.31.21.140
+            User ec2-user
             IdentityFile ~/.ssh/id_rsa
             ProxyJump frontend
             StrictHostKeyChecking no
             ConnectTimeout 120
-            ConnectionAttempts 5
+            ServerAliveInterval 30
+            IPQoS lowdelay
           EOF
 
-      - name: Preparar y Desplegar Backend
-        run: |
-          # 1. Fase de Rescate: Crear SWAP e instalar Docker Compose
-          ssh backend << 'EOF'
-            if [ ! -f /swapfile ]; then
-              echo "Creando Swap de 2GB para estabilidad..."
-              sudo dd if=/dev/zero of=/swapfile bs=1M count=2048
-              sudo chmod 600 /swapfile
-              sudo mkswap /swapfile
-              sudo swapon /swapfile
-            fi
-            sudo mkdir -p /usr/libexec/docker/cli-plugins
-            sudo curl -sSL https://github.com/docker/compose/releases/latest/download/docker-compose-linux-$(uname -m) -o /usr/libexec/docker/cli-plugins/docker-compose
-            sudo chmod +x /usr/libexec/docker/cli-plugins/docker-compose
-          EOF
+          echo "--- 1. Fase de Rescate y Swap ---"
+          # El primer SSH es el más difícil, una vez abierto, ControlPersist lo mantiene vivo
+          ssh backend "sudo dd if=/dev/zero of=/swapfile bs=1M count=2048 && sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile" || echo "Swap ya existente o error omitido"
 
-          # 2. Copiar archivo inyectándolo por el túnel SSH (más seguro que scp)
+          echo "--- 2. Instalación de Docker Compose ---"
+          ssh backend "sudo mkdir -p /usr/libexec/docker/cli-plugins && sudo curl -sSL https://github.com/docker/compose/releases/latest/download/docker-compose-linux-$(uname -m) -o /usr/libexec/docker/cli-plugins/docker-compose && sudo chmod +x /usr/libexec/docker/cli-plugins/docker-compose"
+
+          echo "--- 3. Copiar y Desplegar ---"
           cat docker-compose.backend.yml | ssh backend "cat > ~/docker-compose.yml"
-
-          # 3. Despliegue Escalonado para no saturar la CPU
+          
           ssh backend << 'EOF'
             export DOCKERHUB_USERNAME="${{ secrets.DOCKERHUB_USERNAME }}"
             export DB_PASSWORD="${{ secrets.DB_PASSWORD }}"
-            
             sudo -E docker compose down || true
-            sudo docker rm -f mysql-server || true
-            
-            echo "Descargando imágenes nuevas..."
             sudo -E docker compose pull
-            
-            echo "Iniciando MySQL..."
             sudo -E docker compose up -d mysql-server
             sleep 45
-            
-            echo "Levantando Microservicios Spring Boot..."
             sudo -E docker compose up -d
-            
-            echo "Configurando bases de datos..."
             sleep 20
             sudo docker exec mysql-server mysql -uroot -p${DB_PASSWORD} -e "CREATE DATABASE IF NOT EXISTS despachos_db; CREATE DATABASE IF NOT EXISTS ventas_db;"
           EOF
