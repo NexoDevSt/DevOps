@@ -65,44 +65,45 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
 
-      - name: Configurar SSH y Desplegar Directo
+      - name: Desplegar Backend
         run: |
           mkdir -p ~/.ssh
           echo "${{ secrets.AWS_SSH_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
 
-          # Definimos las variables para no fallar
-          FE_HOST="${{ secrets.VM_USER }}@${{ secrets.IP_FRONTEND }}"
-          BE_IP="172.31.21.140"
-          SSH_OPTS="-o StrictHostKeyChecking=no -o ConnectTimeout=120 -o ServerAliveInterval=10 -o ProxyCommand='ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no -W %h:%p $FE_HOST'"
-
-          echo "--- 1. Fase de Rescate (SWAP) ---"
-          ssh $SSH_OPTS ${{ secrets.VM_USER }}@$BE_IP << 'EOF'
-            if [ ! -f /swapfile ]; then
-              sudo dd if=/dev/zero of=/swapfile bs=1M count=2048
-              sudo chmod 600 /swapfile
-              sudo mkswap /swapfile
-              sudo swapon /swapfile
-            fi
+          echo "--- 1. Preparar Docker Compose ---"
+          # Usamos el formato directo sin variables para evitar errores de comillas
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=120 \
+              -o ProxyCommand="ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no -W %h:%p ${{ secrets.VM_USER }}@${{ secrets.IP_FRONTEND }}" \
+              ${{ secrets.VM_USER }}@172.31.21.140 << 'EOF'
             sudo mkdir -p /usr/libexec/docker/cli-plugins
             sudo curl -sSL https://github.com/docker/compose/releases/latest/download/docker-compose-linux-$(uname -m) -o /usr/libexec/docker/cli-plugins/docker-compose
             sudo chmod +x /usr/libexec/docker/cli-plugins/docker-compose
           EOF
 
-          echo "--- 2. Copiar Docker Compose ---"
-          cat docker-compose.backend.yml | ssh $SSH_OPTS ${{ secrets.VM_USER }}@$BE_IP "cat > ~/docker-compose.yml"
+          echo "--- 2. Copiar Archivo Compose ---"
+          cat docker-compose.backend.yml | ssh -o StrictHostKeyChecking=no \
+              -o ProxyCommand="ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no -W %h:%p ${{ secrets.VM_USER }}@${{ secrets.IP_FRONTEND }}" \
+              ${{ secrets.VM_USER }}@172.31.21.140 "cat > ~/docker-compose.yml"
 
-          echo "--- 3. Levantar Microservicios ---"
-          ssh $SSH_OPTS ${{ secrets.VM_USER }}@$BE_IP << 'EOF'
+          echo "--- 3. Levantar Servicios Escalonados ---"
+          ssh -o StrictHostKeyChecking=no \
+              -o ProxyCommand="ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no -W %h:%p ${{ secrets.VM_USER }}@${{ secrets.IP_FRONTEND }}" \
+              ${{ secrets.VM_USER }}@172.31.21.140 << 'EOF'
             export DOCKERHUB_USERNAME="${{ secrets.DOCKERHUB_USERNAME }}"
             export DB_PASSWORD="${{ secrets.DB_PASSWORD }}"
+            
             sudo -E docker compose down || true
-            sudo -E docker compose pull
-            sudo -E docker compose up -d mysql-server
-            sleep 40
-            sudo -E docker compose up -d
-            sleep 20
+            
+            echo "Iniciando MySQL..."
+            sudo -E docker compose up -d db-mysql
+            sleep 60
+            
+            echo "Creando Bases de Datos..."
             sudo docker exec mysql-server mysql -uroot -p${DB_PASSWORD} -e "CREATE DATABASE IF NOT EXISTS despachos_db; CREATE DATABASE IF NOT EXISTS ventas_db;"
+            
+            echo "Iniciando Apps..."
+            sudo -E docker compose up -d
           EOF
           
   deploy-frontend:
