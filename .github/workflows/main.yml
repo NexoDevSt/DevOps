@@ -65,7 +65,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
 
-      - name: Configurar SSH con ProxyJump
+      - name: Configurar SSH con ProxyJump (Red Interna)
         run: |
           mkdir -p ~/.ssh
           echo "${{ secrets.AWS_SSH_KEY }}" > ~/.ssh/id_rsa
@@ -83,14 +83,17 @@ jobs:
             IdentityFile ~/.ssh/id_rsa
             ProxyJump frontend
             StrictHostKeyChecking no
-            ConnectTimeout 60
+            ConnectTimeout 120
+            ConnectionAttempts 5
           EOF
 
       - name: Preparar y Desplegar Backend
         run: |
+          # 1. Fase de Rescate: Crear SWAP e instalar Docker Compose
           ssh backend << 'EOF'
             if [ ! -f /swapfile ]; then
-              sudo fallocate -l 2G /swapfile || sudo dd if=/dev/zero of=/swapfile bs=1M count=2048
+              echo "Creando Swap de 2GB para estabilidad..."
+              sudo dd if=/dev/zero of=/swapfile bs=1M count=2048
               sudo chmod 600 /swapfile
               sudo mkswap /swapfile
               sudo swapon /swapfile
@@ -100,8 +103,10 @@ jobs:
             sudo chmod +x /usr/libexec/docker/cli-plugins/docker-compose
           EOF
 
+          # 2. Copiar archivo inyectándolo por el túnel SSH (más seguro que scp)
           cat docker-compose.backend.yml | ssh backend "cat > ~/docker-compose.yml"
 
+          # 3. Despliegue Escalonado para no saturar la CPU
           ssh backend << 'EOF'
             export DOCKERHUB_USERNAME="${{ secrets.DOCKERHUB_USERNAME }}"
             export DB_PASSWORD="${{ secrets.DB_PASSWORD }}"
@@ -109,14 +114,14 @@ jobs:
             sudo -E docker compose down || true
             sudo docker rm -f mysql-server || true
             
-            echo "Descargando imágenes..."
+            echo "Descargando imágenes nuevas..."
             sudo -E docker compose pull
             
-            echo "Iniciando Base de Datos..."
+            echo "Iniciando MySQL..."
             sudo -E docker compose up -d mysql-server
-            sleep 30
+            sleep 45
             
-            echo "Iniciando aplicaciones Spring Boot..."
+            echo "Levantando Microservicios Spring Boot..."
             sudo -E docker compose up -d
             
             echo "Configurando bases de datos..."
@@ -125,40 +130,29 @@ jobs:
           EOF
           
   deploy-frontend:
-    needs: build-and-push
+    needs: deploy-backend
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout para obtener los archivos Compose
+      - name: Checkout
         uses: actions/checkout@v3
 
-      - name: Configurar llave SSH Directa al Frontend
+      - name: Configurar llave SSH Frontend
         run: |
           mkdir -p ~/.ssh
           echo "${{ secrets.AWS_SSH_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
-          cat >> ~/.ssh/config <<EOF
-          Host frontend
-            HostName ${{ secrets.IP_FRONTEND }}
-            User ${{ secrets.VM_USER }}
-            IdentityFile ~/.ssh/id_rsa
-            StrictHostKeyChecking no
-          EOF
 
-      - name: Copiar Docker Compose al Frontend
+      - name: Desplegar Frontend
         run: |
-          scp docker-compose.frontend.yml frontend:~/docker-compose.yml
-
-      - name: Desplegar Frontend en AWS con Docker Compose
-        run: |
-          ssh frontend << 'EOF'
+          # Inyectamos el archivo y ejecutamos comandos en un solo paso
+          cat docker-compose.frontend.yml | ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa ${{ secrets.VM_USER }}@${{ secrets.IP_FRONTEND }} "cat > ~/docker-compose.yml"
+          
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa ${{ secrets.VM_USER }}@${{ secrets.IP_FRONTEND }} << 'EOF'
             export DOCKERHUB_USERNAME="${{ secrets.DOCKERHUB_USERNAME }}"
-            
-            # Instalar Docker Compose si no existe en Amazon Linux 2023
             sudo mkdir -p /usr/libexec/docker/cli-plugins
             sudo curl -sSL https://github.com/docker/compose/releases/latest/download/docker-compose-linux-$(uname -m) -o /usr/libexec/docker/cli-plugins/docker-compose
             sudo chmod +x /usr/libexec/docker/cli-plugins/docker-compose
             
-            # El flag -E permite que sudo lea las variables exportadas arriba
             sudo -E docker compose down || true
             sudo -E docker compose pull
             sudo -E docker compose up -d
