@@ -71,28 +71,24 @@ jobs:
           echo "${{ secrets.AWS_SSH_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
           cat >> ~/.ssh/config <<EOF
-          Host *
-            StrictHostKeyChecking no
-            UserKnownHostsFile /dev/null
-            ServerAliveInterval 30
-            ServerAliveCountMax 5
-
           Host frontend
             HostName ${{ secrets.IP_FRONTEND }}
             User ${{ secrets.VM_USER }}
             IdentityFile ~/.ssh/id_rsa
+            StrictHostKeyChecking no
 
           Host backend
             HostName ${{ secrets.IP_BACKEND }}
             User ${{ secrets.VM_USER }}
             IdentityFile ~/.ssh/id_rsa
             ProxyJump frontend
+            StrictHostKeyChecking no
           EOF
 
-      - name: Copiar Docker Compose al Backend
+      - name: Copiar Docker Compose al Backend mediante SSH puro
         run: |
-          # Agregamos -o StrictHostKeyChecking=no y -o UserKnownHostsFile=/dev/null explícitamente a scp por seguridad
-          scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null docker-compose.backend.yml backend:~/docker-compose.yml
+          # Reemplazamos scp por una inyección directa vía ssh
+          cat docker-compose.backend.yml | ssh backend "cat > ~/docker-compose.yml"
 
       - name: Desplegar Backend en AWS con Docker Compose
         run: |
@@ -109,7 +105,7 @@ jobs:
               sudo swapon /swapfile
               echo "Swap creado y activado exitosamente."
             fi
-
+            
             # Instalar Docker Compose si no existe en Amazon Linux 2023
             sudo mkdir -p /usr/libexec/docker/cli-plugins
             sudo curl -sSL https://github.com/docker/compose/releases/latest/download/docker-compose-linux-$(uname -m) -o /usr/libexec/docker/cli-plugins/docker-compose
