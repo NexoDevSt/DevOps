@@ -1,4 +1,4 @@
-\# Innovatech Chile - Etapa 2: Despliegue Automatizado
+# Innovatech Chile - Etapa 2: Despliegue Automatizado
 
 
 
@@ -6,7 +6,7 @@ Este repositorio contiene la solución de contenedorización y microservicios pa
 
 
 
-\## Estructura del Proyecto
+## Estructura del Proyecto
 
 \* \*\*back-Despachos\_SpringBoot\*\*: Microservicio de gestión de despachos.
 
