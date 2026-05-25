@@ -10,24 +10,12 @@ services:
       - mysql_data:/var/lib/mysql
     networks:
       - innova-network
-    deploy:
-      resources:
-        limits:
-          cpus: '0.4'
-          memory: 350M
-        reservations:
-          memory: 256M
-    command: >
-      --innodb_buffer_pool_size=128M
-      --max_connections=30
-      --performance_schema=OFF
-      --skip-name-resolve
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-p${DB_PASSWORD}"]
-      interval: 15s
+      interval: 10s
       timeout: 5s
       retries: 10
-      start_period: 40s
+      start_period: 30s
 
   back-despachos:
     image: ${DOCKERHUB_USERNAME}/back-despachos:latest
@@ -38,19 +26,11 @@ services:
       - SPRING_DATASOURCE_URL=jdbc:mysql://db-mysql:3306/despachos_db?allowPublicKeyRetrieval=true&useSSL=false
       - SPRING_DATASOURCE_USERNAME=root
       - SPRING_DATASOURCE_PASSWORD=${DB_PASSWORD}
-      - JAVA_OPTS=-Xms64m -Xmx180m -XX:+UseSerialGC -XX:MaxMetaspaceSize=80m
     depends_on:
       db-mysql:
         condition: service_healthy
     networks:
       - innova-network
-    deploy:
-      resources:
-        limits:
-          cpus: '0.3'
-          memory: 220M
-        reservations:
-          memory: 100M
 
   back-ventas:
     image: ${DOCKERHUB_USERNAME}/back-ventas:latest
@@ -61,19 +41,11 @@ services:
       - SPRING_DATASOURCE_URL=jdbc:mysql://db-mysql:3306/ventas_db?allowPublicKeyRetrieval=true&useSSL=false
       - SPRING_DATASOURCE_USERNAME=root
       - SPRING_DATASOURCE_PASSWORD=${DB_PASSWORD}
-      - JAVA_OPTS=-Xms64m -Xmx180m -XX:+UseSerialGC -XX:MaxMetaspaceSize=80m
     depends_on:
       db-mysql:
         condition: service_healthy
     networks:
       - innova-network
-    deploy:
-      resources:
-        limits:
-          cpus: '0.3'
-          memory: 220M
-        reservations:
-          memory: 100M
 
 networks:
   innova-network:
