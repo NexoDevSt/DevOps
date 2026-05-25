@@ -3,7 +3,7 @@ name: CI/CD Pipeline - Docker Hub & Compose Split
 on:
   push:
     branches:
-      - fix/backend_problems
+      - deploy
 
 jobs:
   build-and-push:
