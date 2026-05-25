@@ -72,12 +72,12 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
 
           echo "--- 1. Preparar Docker Compose ---"
-          # Usamos el formato directo sin variables para evitar errores de comillas
           ssh -o StrictHostKeyChecking=no -o ConnectTimeout=120 \
               -o ProxyCommand="ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no -W %h:%p ${{ secrets.VM_USER }}@${{ secrets.IP_FRONTEND }}" \
               ${{ secrets.VM_USER }}@172.31.21.140 << 'EOF'
             sudo mkdir -p /usr/libexec/docker/cli-plugins
-            sudo curl -sSL https://github.com/docker/compose/releases/latest/download/docker-compose-linux-$(uname -m) -o /usr/libexec/docker/cli-plugins/docker-compose
+            sudo curl -sSL https://github.com/docker/compose/releases/latest/download/docker-compose-linux-$(uname -m) \
+              -o /usr/libexec/docker/cli-plugins/docker-compose
             sudo chmod +x /usr/libexec/docker/cli-plugins/docker-compose
           EOF
 
@@ -86,24 +86,47 @@ jobs:
               -o ProxyCommand="ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no -W %h:%p ${{ secrets.VM_USER }}@${{ secrets.IP_FRONTEND }}" \
               ${{ secrets.VM_USER }}@172.31.21.140 "cat > ~/docker-compose.yml"
 
-          echo "--- 3. Levantar Servicios Escalonados ---"
+          echo "--- 3. Limpiar y Levantar Servicios ---"
           ssh -o StrictHostKeyChecking=no \
               -o ProxyCommand="ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no -W %h:%p ${{ secrets.VM_USER }}@${{ secrets.IP_FRONTEND }}" \
               ${{ secrets.VM_USER }}@172.31.21.140 << 'EOF'
             export DOCKERHUB_USERNAME="${{ secrets.DOCKERHUB_USERNAME }}"
             export DB_PASSWORD="${{ secrets.DB_PASSWORD }}"
-            
-            sudo -E docker compose down || true
-            
+
+            echo "Deteniendo y eliminando contenedores existentes..."
+            sudo -E docker compose down --volumes --remove-orphans || true
+            sudo docker rm -f mysql-server back-despachos back-ventas 2>/dev/null || true
+            sudo docker network rm $(sudo docker network ls -q --filter name=innova-network) 2>/dev/null || true
+
+            echo "Liberando caché del sistema..."
+            sync && sudo sh -c 'echo 3 > /proc/sys/vm/drop_caches'
+
             echo "Iniciando MySQL..."
             sudo -E docker compose up -d db-mysql
-            sleep 60
-            
+
+            echo "Esperando a que MySQL esté saludable..."
+            until sudo docker inspect --format='{{.State.Health.Status}}' mysql-server 2>/dev/null | grep -q "healthy"; do
+              echo "  MySQL aún no está listo, esperando 15s..."
+              sleep 15
+            done
+            echo "MySQL listo."
+
             echo "Creando Bases de Datos..."
-            sudo docker exec mysql-server mysql -uroot -p${DB_PASSWORD} -e "CREATE DATABASE IF NOT EXISTS despachos_db; CREATE DATABASE IF NOT EXISTS ventas_db;"
-            
-            echo "Iniciando Apps..."
-            sudo -E docker compose up -d
+            sudo docker exec mysql-server mysql -uroot -p${DB_PASSWORD} \
+              -e "CREATE DATABASE IF NOT EXISTS despachos_db; CREATE DATABASE IF NOT EXISTS ventas_db;"
+
+            echo "Iniciando back-despachos..."
+            sudo -E docker compose up -d back-despachos
+            sleep 40
+
+            echo "Iniciando back-ventas..."
+            sudo -E docker compose up -d back-ventas
+            sleep 30
+
+            echo "Estado final:"
+            sudo docker ps
+            echo "Uso de memoria:"
+            free -m
           EOF
           
   deploy-frontend:
