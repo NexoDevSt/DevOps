@@ -79,7 +79,7 @@ jobs:
 
       - name: Descargar Task Definition de Despachos
         run: |
-          aws ecs describe-task-definition --task-definition innovatech-backend-task --query taskDefinition > task-def-despachos.json
+          aws ecs describe-task-definition --task-definition innovatech-backend-task --query taskDefinition | jq 'del(.enableFaultInjection)' > task-def-despachos.json
 
       - name: Reemplazar imagen por microservice-despachos
         id: render-despachos
@@ -99,7 +99,7 @@ jobs:
 
       - name: Descargar Task Definition de Ventas
         run: |
-          aws ecs describe-task-definition --task-definition innovatech-ventas-task --query taskDefinition > task-def-ventas.json
+          aws ecs describe-task-definition --task-definition innovatech-ventas-task --query taskDefinition | jq 'del(.enableFaultInjection)' > task-def-ventas.json
 
       - name: Reemplazar imagen por microservice-ventas
         id: render-ventas
@@ -119,7 +119,7 @@ jobs:
 
       - name: Descargar Task Definition de Frontend
         run: |
-          aws ecs describe-task-definition --task-definition innovatech-frontend-task --query taskDefinition > task-def-front.json
+          aws ecs describe-task-definition --task-definition innovatech-frontend-task --query taskDefinition | jq 'del(.enableFaultInjection)' > task-def-front.json
 
       - name: Reemplazar imagen por Frontend en ECR
         id: render-front
