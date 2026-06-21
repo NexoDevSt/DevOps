@@ -34,7 +34,7 @@ jobs:
       - name: Compilar y Subir Back-Despachos
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          ECR_REPOSITORY: back-despachos
+          ECR_REPOSITORY: microservice-despachos
           IMAGE_TAG: latest
         run: |
           cd back-Despachos_SpringBoot/Springboot-API-REST-DESPACHO
@@ -46,7 +46,7 @@ jobs:
       - name: Compilar y Subir Back-Ventas
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          ECR_REPOSITORY: back-ventas
+          ECR_REPOSITORY: microservice-ventas
           IMAGE_TAG: latest
         run: |
           cd back-Ventas_SpringBoot/Springboot-API-REST
@@ -58,7 +58,7 @@ jobs:
       - name: Construir y Subir Frontend
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          ECR_REPOSITORY: frontend-innovatech
+          ECR_REPOSITORY: frontend
           IMAGE_TAG: latest
         run: |
           cd front_despacho
@@ -77,23 +77,43 @@ jobs:
           aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
           aws-region: us-east-1
 
-      - name: Descargar Task Definition de Backend
+      - name: Descargar Task Definition de Despachos
         run: |
-          aws ecs describe-task-definition --task-definition innovatech-backend-task --query taskDefinition > task-def-back.json
+          aws ecs describe-task-definition --task-definition innovatech-backend-task --query taskDefinition > task-def-despachos.json
 
-      - name: Reemplazar imagen NGINX por Back-Despachos en ECR
-        id: render-back
+      - name: Reemplazar imagen por microservice-despachos
+        id: render-despachos
         uses: aws-actions/amazon-ecs-render-task-definition@v1
         with:
-          task-definition: task-def-back.json
+          task-definition: task-def-despachos.json
           container-name: backend-container
-          image: 429843885849.dkr.ecr.us-east-1.amazonaws.com/back-despachos:latest
+          image: 429843885849.dkr.ecr.us-east-1.amazonaws.com/microservice-despachos:latest
 
-      - name: Desplegar Backend en ECS
+      - name: Desplegar Despachos en ECS
         uses: aws-actions/amazon-ecs-deploy-task-definition@v1
         with:
-          task-definition: ${{ steps.render-back.outputs.task-definition }}
+          task-definition: ${{ steps.render-despachos.outputs.task-definition }}
           service: innovatech-service-back
+          cluster: innovatech-cluster
+          wait-for-service-stability: true
+
+      - name: Descargar Task Definition de Ventas
+        run: |
+          aws ecs describe-task-definition --task-definition innovatech-ventas-task --query taskDefinition > task-def-ventas.json
+
+      - name: Reemplazar imagen por microservice-ventas
+        id: render-ventas
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: task-def-ventas.json
+          container-name: ventas-container
+          image: 429843885849.dkr.ecr.us-east-1.amazonaws.com/microservice-ventas:latest
+
+      - name: Desplegar Ventas en ECS
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+        with:
+          task-definition: ${{ steps.render-ventas.outputs.task-definition }}
+          service: innovatech-service-ventas
           cluster: innovatech-cluster
           wait-for-service-stability: true
 
@@ -101,13 +121,13 @@ jobs:
         run: |
           aws ecs describe-task-definition --task-definition innovatech-frontend-task --query taskDefinition > task-def-front.json
 
-      - name: Reemplazar imagen NGINX por Frontend en ECR
+      - name: Reemplazar imagen por Frontend en ECR
         id: render-front
         uses: aws-actions/amazon-ecs-render-task-definition@v1
         with:
           task-definition: task-def-front.json
           container-name: frontend-container
-          image: 429843885849.dkr.ecr.us-east-1.amazonaws.com/frontend-innovatech:latest
+          image: 429843885849.dkr.ecr.us-east-1.amazonaws.com/frontend:latest
 
       - name: Desplegar Frontend en ECS
         uses: aws-actions/amazon-ecs-deploy-task-definition@v1
