@@ -1,12 +1,12 @@
-name: CI/CD Pipeline - Docker Hub & Compose Split
+name: CI/CD Pipeline - AWS ECR & ECS
 
 on:
   push:
     branches:
-      - deploy
+      - feature/despliegue-ecs
 
 jobs:
-  build-and-push:
+  build-and-push-ecr:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout del código
@@ -19,141 +19,100 @@ jobs:
           distribution: 'temurin'
           cache: 'maven'
 
-      - name: Iniciar sesión en Docker Hub
-        uses: docker/login-action@v2
+      - name: Configurar credenciales de AWS
+        uses: aws-actions/configure-aws-credentials@v2
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: us-east-1
 
-      - name: Compilar Microservicio Despachos
+      - name: Login a Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+
+      - name: Compilar y Subir Back-Despachos
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: back-despachos
+          IMAGE_TAG: latest
         run: |
           cd back-Despachos_SpringBoot/Springboot-API-REST-DESPACHO
           chmod +x mvnw
           ./mvnw clean package -DskipTests
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
 
-      - name: Construir y Subir Imagen Despachos
-        uses: docker/build-push-action@v4
-        with:
-          context: ./back-Despachos_SpringBoot/Springboot-API-REST-DESPACHO
-          push: true
-          tags: ${{ secrets.DOCKERHUB_USERNAME }}/back-despachos:latest
-
-      - name: Compilar Microservicio Ventas
+      - name: Compilar y Subir Back-Ventas
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: back-ventas
+          IMAGE_TAG: latest
         run: |
           cd back-Ventas_SpringBoot/Springboot-API-REST
           chmod +x mvnw
           ./mvnw clean package -DskipTests
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
 
-      - name: Construir y Subir Imagen Ventas
-        uses: docker/build-push-action@v4
-        with:
-          context: ./back-Ventas_SpringBoot/Springboot-API-REST
-          push: true
-          tags: ${{ secrets.DOCKERHUB_USERNAME }}/back-ventas:latest
+      - name: Construir y Subir Frontend
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: frontend-innovatech
+          IMAGE_TAG: latest
+        run: |
+          cd front_despacho
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
 
-      - name: Construir y Subir Imagen Frontend
-        uses: docker/build-push-action@v4
-        with:
-          context: ./front_despacho
-          push: true
-          tags: ${{ secrets.DOCKERHUB_USERNAME }}/frontend-innovatech:latest
-
-  deploy-backend:
-    needs: build-and-push
+  deploy-to-ecs:
+    needs: build-and-push-ecr
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v3
+      - name: Configurar credenciales de AWS
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: us-east-1
 
-      - name: Desplegar Backend
+      - name: Descargar Task Definition de Backend
         run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.AWS_SSH_KEY }}" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
+          aws ecs describe-task-definition --task-definition innovatech-backend-task --query taskDefinition > task-def-back.json
 
-          echo "--- 1. Preparar Docker Compose ---"
-          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=120 \
-              -o ProxyCommand="ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no -W %h:%p ${{ secrets.VM_USER }}@${{ secrets.IP_FRONTEND }}" \
-              ${{ secrets.VM_USER }}@172.31.21.140 << 'EOF'
-            sudo mkdir -p /usr/libexec/docker/cli-plugins
-            sudo curl -sSL https://github.com/docker/compose/releases/latest/download/docker-compose-linux-$(uname -m) \
-              -o /usr/libexec/docker/cli-plugins/docker-compose
-            sudo chmod +x /usr/libexec/docker/cli-plugins/docker-compose
-          EOF
+      - name: Reemplazar imagen NGINX por Back-Despachos en ECR
+        id: render-back
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: task-def-back.json
+          container-name: backend-container
+          image: 429843885849.dkr.ecr.us-east-1.amazonaws.com/back-despachos:latest
 
-          echo "--- 2. Copiar Archivo Compose ---"
-          cat docker-compose.backend.yml | ssh -o StrictHostKeyChecking=no \
-              -o ProxyCommand="ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no -W %h:%p ${{ secrets.VM_USER }}@${{ secrets.IP_FRONTEND }}" \
-              ${{ secrets.VM_USER }}@172.31.21.140 "cat > ~/docker-compose.yml"
+      - name: Desplegar Backend en ECS
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+        with:
+          task-definition: ${{ steps.render-back.outputs.task-definition }}
+          service: innovatech-service-back
+          cluster: innovatech-cluster
+          wait-for-service-stability: true
 
-          echo "--- 3. Limpiar y Levantar Servicios ---"
-          ssh -o StrictHostKeyChecking=no \
-              -o ProxyCommand="ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no -W %h:%p ${{ secrets.VM_USER }}@${{ secrets.IP_FRONTEND }}" \
-              ${{ secrets.VM_USER }}@172.31.21.140 << 'EOF'
-            export DOCKERHUB_USERNAME="${{ secrets.DOCKERHUB_USERNAME }}"
-            export DB_PASSWORD="${{ secrets.DB_PASSWORD }}"
-
-            echo "Deteniendo y eliminando contenedores existentes..."
-            sudo -E docker compose down --volumes --remove-orphans || true
-            sudo docker rm -f mysql-server back-despachos back-ventas 2>/dev/null || true
-            sudo docker network rm $(sudo docker network ls -q --filter name=innova-network) 2>/dev/null || true
-
-            echo "Liberando caché del sistema..."
-            sync && sudo sh -c 'echo 3 > /proc/sys/vm/drop_caches'
-
-            echo "Iniciando MySQL..."
-            sudo -E docker compose up -d db-mysql
-
-            echo "Esperando a que MySQL esté saludable..."
-            until sudo docker inspect --format='{{.State.Health.Status}}' mysql-server 2>/dev/null | grep -q "healthy"; do
-              echo "  MySQL aún no está listo, esperando 15s..."
-              sleep 15
-            done
-            echo "MySQL listo."
-
-            echo "Creando Bases de Datos..."
-            sudo docker exec mysql-server mysql -uroot -p${DB_PASSWORD} \
-              -e "CREATE DATABASE IF NOT EXISTS despachos_db; CREATE DATABASE IF NOT EXISTS ventas_db;"
-
-            echo "Iniciando back-despachos..."
-            sudo -E docker compose up -d back-despachos
-            sleep 40
-
-            echo "Iniciando back-ventas..."
-            sudo -E docker compose up -d back-ventas
-            sleep 30
-
-            echo "Estado final:"
-            sudo docker ps
-            echo "Uso de memoria:"
-            free -m
-          EOF
-          
-  deploy-frontend:
-    needs: deploy-backend
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v3
-
-      - name: Configurar llave SSH Frontend
+      - name: Descargar Task Definition de Frontend
         run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.AWS_SSH_KEY }}" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
+          aws ecs describe-task-definition --task-definition innovatech-frontend-task --query taskDefinition > task-def-front.json
 
-      - name: Desplegar Frontend
-        run: |
-          # Inyectamos el archivo y ejecutamos comandos en un solo paso
-          cat docker-compose.frontend.yml | ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa ${{ secrets.VM_USER }}@${{ secrets.IP_FRONTEND }} "cat > ~/docker-compose.yml"
-          
-          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa ${{ secrets.VM_USER }}@${{ secrets.IP_FRONTEND }} << 'EOF'
-            export DOCKERHUB_USERNAME="${{ secrets.DOCKERHUB_USERNAME }}"
-            sudo mkdir -p /usr/libexec/docker/cli-plugins
-            sudo curl -sSL https://github.com/docker/compose/releases/latest/download/docker-compose-linux-$(uname -m) -o /usr/libexec/docker/cli-plugins/docker-compose
-            sudo chmod +x /usr/libexec/docker/cli-plugins/docker-compose
-            
-            sudo -E docker compose down || true
-            sudo -E docker compose pull
-            sudo -E docker compose up -d
-          EOF
+      - name: Reemplazar imagen NGINX por Frontend en ECR
+        id: render-front
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: task-def-front.json
+          container-name: frontend-container
+          image: 429843885849.dkr.ecr.us-east-1.amazonaws.com/frontend-innovatech:latest
+
+      - name: Desplegar Frontend en ECS
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+        with:
+          task-definition: ${{ steps.render-front.outputs.task-definition }}
+          service: innovatech-service-front
+          cluster: innovatech-cluster
+          wait-for-service-stability: true
