@@ -2,8 +2,7 @@ import { useForm } from "react-hook-form";
 import Swal from "sweetalert2";
 import axios from "axios";
 
-// Leer variable de entorno o usar local por defecto (Puerto 8080)
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8080";
+const API_BASE_URL = import.meta.env.VITE_API_DESPACHOS || "http://localhost:8080";
 
 export const FormCierreDespacho = ({ despacho, onClose }) => {
   const { register, handleSubmit } = useForm();
