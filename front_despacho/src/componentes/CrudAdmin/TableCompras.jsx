@@ -3,7 +3,7 @@ import { Modal } from "./Modal";
 import { FormDespacho } from "./FormDespacho";
 import axios from "axios";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8081";
+const API_BASE_URL = import.meta.env.VITE_API_VENTAS || "http://localhost:8081";
 
 export const TableCompras = () => {
   const [ventas, setVentas] = useState([]);

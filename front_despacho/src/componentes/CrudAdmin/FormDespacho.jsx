@@ -2,9 +2,7 @@ import { useForm } from "react-hook-form";
 import Swal from "sweetalert2";
 import axios from "axios";
 
-// Leer variable de entorno o usar el puerto microservicio correspondiente (8081)
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8081";
-
+const API_BASE_URL = import.meta.env.VITE_API_VENTAS || "http://localhost:8081";
 export const FormDespacho = ({ venta, onClose }) => {
   const { register, handleSubmit } = useForm();
 
