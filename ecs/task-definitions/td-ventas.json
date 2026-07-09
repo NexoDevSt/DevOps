@@ -1,0 +1,48 @@
+{
+  "family": "innovatech-ventas-task",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "1024", "memory": "2048",
+  "executionRoleArn": "arn:aws:iam::457575664520:role/LabRole",
+  "taskRoleArn": "arn:aws:iam::457575664520:role/LabRole",
+  "containerDefinitions": [
+    {
+      "name": "mysql",
+      "image": "mysql:8.0",
+      "essential": true,
+      "environment": [
+        {"name": "MYSQL_ROOT_PASSWORD", "value": "rootpassword"},
+        {"name": "MYSQL_DATABASE", "value": "ventas_db"}
+      ],
+      "command": ["--skip-name-resolve","--innodb_buffer_pool_size=256M","--max_connections=50"],
+      "portMappings": [{"containerPort": 3306, "protocol": "tcp"}],
+      "healthCheck": {
+        "command": ["CMD-SHELL","mysqladmin ping -h 127.0.0.1 -prootpassword || exit 1"],
+        "interval": 15, "timeout": 5, "retries": 10, "startPeriod": 60
+      },
+      "logConfiguration": {"logDriver":"awslogs","options":{
+        "awslogs-group":"/ecs/innovatech-ventas","awslogs-region":"us-east-1",
+        "awslogs-stream-prefix":"mysql","awslogs-create-group":"true"}}
+    },
+    {
+      "name": "ventas-container",
+      "image": "457575664520.dkr.ecr.us-east-1.amazonaws.com/microservice-ventas:latest",
+      "essential": true,
+      "dependsOn": [{"containerName": "mysql", "condition": "HEALTHY"}],
+      "portMappings": [{"containerPort": 8081, "protocol": "tcp"}],
+      "environment": [
+        {"name": "SPRING_DATASOURCE_URL", "value": "jdbc:mysql://127.0.0.1:3306/ventas_db?allowPublicKeyRetrieval=true&useSSL=false&serverTimezone=UTC"},
+        {"name": "SPRING_DATASOURCE_USERNAME", "value": "root"},
+        {"name": "SPRING_DATASOURCE_PASSWORD", "value": "rootpassword"},
+        {"name": "DB_ENDPOINT", "value": "127.0.0.1"},
+        {"name": "DB_PORT", "value": "3306"},
+        {"name": "DB_NAME", "value": "ventas_db"},
+        {"name": "DB_USERNAME", "value": "root"},
+        {"name": "DB_PASSWORD", "value": "rootpassword"}
+      ],
+      "logConfiguration": {"logDriver":"awslogs","options":{
+        "awslogs-group":"/ecs/innovatech-ventas","awslogs-region":"us-east-1",
+        "awslogs-stream-prefix":"ecs","awslogs-create-group":"true"}}
+    }
+  ]
+}
