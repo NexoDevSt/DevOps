@@ -8,12 +8,13 @@ on:
 env:
   AWS_REGION: us-east-1
   ECR_REGISTRY: 429843885849.dkr.ecr.us-east-1.amazonaws.com
-  IMAGE_TAG: ${{ github.sha }}
+  IMAGE_TAG: ${{ github.sha }}   
 
 jobs:
   build-and-push-ecr:
     runs-on: ubuntu-latest
 
+    # Base de datos efímera SOLO para la etapa de test del pipeline
     services:
       mysql:
         image: mysql:8.0
@@ -37,7 +38,7 @@ jobs:
           distribution: 'temurin'
           cache: 'maven'
 
-      - name: Preparar base de datos de test
+      - name: Preparar base de datos de test (crear ventas_db)
         run: |
           mysql -h 127.0.0.1 -uroot -prootpassword \
             -e "CREATE DATABASE IF NOT EXISTS ventas_db;"
@@ -70,9 +71,10 @@ jobs:
           aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Login a Amazon ECR
-        id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v2
+      - name: Login a Amazon ECR (manual, evita el error "no basic auth credentials")
+        run: |
+          aws ecr get-login-password --region ${{ env.AWS_REGION }} | \
+            docker login --username AWS --password-stdin ${{ env.ECR_REGISTRY }}
 
       - name: Compilar y Subir Back-Despachos
         env:
