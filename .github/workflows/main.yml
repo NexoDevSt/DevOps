@@ -3,7 +3,7 @@ name: CI/CD Pipeline - AWS ECR & ECS
 on:
   push:
     branches:
-      - feature/despliegue-ecs
+      - deploy
 
 env:
   AWS_REGION: us-east-1
